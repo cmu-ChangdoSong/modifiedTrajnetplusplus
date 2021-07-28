@@ -3,14 +3,12 @@
 import numpy as np
 import pysparkling
 
-# import trajnetplusplustools
 import data
 from kalman import predict as kalman_predict
 from interactions import check_interaction, group
 from interactions import get_interaction_type
 
 import pickle
-# from orca_helper import predict_all
 
 from data_loader import DataLoader as dl
 
@@ -58,7 +56,13 @@ def trajectory_type(track_id=0, args=None):
     """ Categorization of all scenes """
 
     def split_by_size(arr, size):
-        return np.split(arr, np.arange(size, len(arr), size))
+        res = np.split(arr, np.arange(size, len(arr), size))
+        # delete elements that has length less than (size)
+        d = []
+        for (i, e) in enumerate(res):
+            if len(e) < 40:
+                d.append(i)
+        return np.delete(res, d, axis=0)
 
     # Construct scene for each of pedestrian (360 in total for eth dataset)
     # Each scene is created over the duration of each pedestrian's apearance, from starting frame to ending frame,
