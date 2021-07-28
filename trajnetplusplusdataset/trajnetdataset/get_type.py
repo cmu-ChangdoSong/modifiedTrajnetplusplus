@@ -57,6 +57,9 @@ def get_type(scene, args):
 def trajectory_type(track_id=0, args=None):
     """ Categorization of all scenes """
 
+    def split_by_size(arr, size):
+        return np.split(arr, np.arange(size, len(arr), size))
+
     # Construct scene for each of pedestrian (360 in total for eth dataset)
     # Each scene is created over the duration of each pedestrian's apearance, from starting frame to ending frame,
     # and the scene will contain paths of all people that are in those frames
@@ -68,6 +71,7 @@ def trajectory_type(track_id=0, args=None):
         ped_id = dataloader.personIdListSorted
         start_frames = dataloader.people_start_frame
         end_frames = dataloader.people_end_frame
+        pred_velocity = dataloader.people_velocity_complete
 
         scenes = {}
         # create scene for each pedestrian
@@ -76,51 +80,74 @@ def trajectory_type(track_id=0, args=None):
             start = start_frames[primary_id]
             end = end_frames[primary_id]
 
-            pos_in_timeframe = {}
-            max_columnlen = 0
-            frame = start
-            # collect pedestrian's position from the begining frame until the end frame
-            while frame <= end:
-                ped_positions = frame_ped_positions[frame]
+            # get all pedestrian id that appears in the timeframe
+            ped_timeframe = set()
 
-                for id in ped_positions.keys():
-                    coord = ped_positions[id]
-                    if id not in pos_in_timeframe.keys():
-                        pos_in_timeframe[id] = []
-                    pos_in_timeframe[id].append(coord)
-                    max_columnlen = len(pos_in_timeframe[id]) if len(
-                        pos_in_timeframe[id]) > max_columnlen else max_columnlen
+            timeframe_len = end - start + 1
+            for f in range(timeframe_len):
+                f_id = start + f
+                ped_timeframe.update(
+                    set(frame_ped_positions[f_id].keys()))
 
-                # the original data has frameids with 6 intervals in between
-                # but we will take into account the interpolated positions between
-                # each frame which has been calculated in data_loader
-                frame += 1
+            # collect all pedestrian's position from the begining frame until the end frame
+            scene_pre = {}
+            for p_id in ped_timeframe:
+                scene_pre[p_id] = [np.NaN] * timeframe_len
 
-            scene = np.empty((len(pos_in_timeframe), max_columnlen, 2))
-            scene[:] = np.NaN
+            for f in range(timeframe_len):
+                f_id = start + f
 
-            # always add primary pedestrian's path to the 0 index so that it confroms
+                for p_id in scene_pre:
+                    if p_id in frame_ped_positions[f_id].keys():
+                        scene_pre[p_id][f] = frame_ped_positions[f_id][p_id]
+                    else:
+                        # take care of the NaNs.
+                        # We will use the pedestrians id's start & end frame
+                        # to calculate this.
+
+                        # First get first velocity if current frame is before start frame,
+                        # get last velocity if current frame is after end frame,
+                        if f_id < start_frames[p_id]:
+                            # TODO:might need to double-check if velocity calculations?
+                            velocity = pred_velocity[p_id][0]
+                            first_coord = frame_ped_positions[start_frames[p_id]][p_id]
+                            frame_diff = start_frames[p_id] - f_id
+                            predict_x = first_coord[0] - \
+                                frame_diff * velocity[0]
+                            predict_y = first_coord[1] - \
+                                frame_diff * velocity[1]
+                        elif f_id > end_frames[p_id]:
+                            velocity = pred_velocity[p_id][-1]
+                            last_coord = frame_ped_positions[end_frames[p_id]][p_id]
+                            predict_x = last_coord[0] + \
+                                frame_diff * velocity[0]
+                            predict_y = last_coord[1] + \
+                                frame_diff * velocity[1]
+                        scene_pre[p_id][f] = [predict_x, predict_y]
+
+            scene = np.empty(
+                shape=[timeframe_len, len(scene_pre), 2])
+
+            # always add primary pedestrian's path to the 0 column so that it confroms
             # with original data format
-            scene[0][:len(pos_in_timeframe[primary_id])] = np.asarray(
-                pos_in_timeframe[primary_id])
+            for f in range(timeframe_len):
+                scene[f][0] = scene_pre[primary_id][f]
 
             # add neighbor's paths to the scene
-            i = 1
-            for id, _ in pos_in_timeframe.items():
-                if id == primary_id:
+            ped = 1
+            for p_id in scene_pre:
+                if p_id == primary_id:
                     continue
-                scene[i][:len(pos_in_timeframe[id])] = np.asarray(
-                    pos_in_timeframe[id])
-                i += 1
+                for f in range(timeframe_len):
+                    scene[f][ped] = scene_pre[p_id][f]
+                ped += 1
 
+            # create a scene for this primary_id
             scenes[primary_id] = scene
 
         return scenes
 
     scenes = constructScenes()
-    # Filtered Frames and Scenes
-    new_frames = set()
-    new_scenes = []
 
     # Initialize Tag Stats to be collected
     tags = {1: [], 2: [], 3: [], 4: []}
@@ -136,42 +163,45 @@ def trajectory_type(track_id=0, args=None):
     group_res = 0
     others_res = 0
 
-    for index, key in enumerate(scenes):
+    for index, primary_id in enumerate(scenes):
         if (index+1) % 50 == 0:
             print(index)
 
-        primary_id = key
-        scene = scenes[key]
+        # divide into a list of 40 frame-scenes
+        # (Social Gan requires a 8 second worth of data which in this case
+        # will be equivalent to 40 frames since the raw data has a 2.5 fps)
+        scene_40f = split_by_size(scenes[primary_id], 40)
 
-        # Get Tag
-        tag, mult_tag, sub_tag, data = get_type(scene, args)
+        for scene in scene_40f:
+            # Get Tag
+            tag, mult_tag, sub_tag, data = get_type(scene, args)
 
-        if 1 in data.keys():
-            leader_follower_res.append(data[1])
+            if 1 in data.keys():
+                leader_follower_res.append(data[1])
 
-        if 2 in data.keys():
-            collision_avoidance_res.append(data[2])
+            if 2 in data.keys():
+                collision_avoidance_res.append(data[2])
 
-        if 3 in data.keys():
-            group_res += 1
+            if 3 in data.keys():
+                group_res += 1
 
-        if 4 in data.keys():
-            others_res += 1
+            if 4 in data.keys():
+                others_res += 1
 
-        if np.random.uniform() < args.acceptance[tag - 1]:
-            # Update Tags
-            tags[tag].append(track_id)
-            for tt in mult_tag:
-                mult_tags[tt].append(track_id)
-            for st in sub_tag:
-                sub_tags[st].append(track_id)
+            if np.random.uniform() < args.acceptance[tag - 1]:
+                # Update Tags
+                tags[tag].append(track_id)
+                for tt in mult_tag:
+                    mult_tags[tt].append(track_id)
+                for st in sub_tag:
+                    sub_tags[st].append(track_id)
 
-            # Define Scene_Tag
-            scene_tag = []
-            scene_tag.append(tag)
-            scene_tag.append(sub_tag)
+                # Define Scene_Tag
+                scene_tag = []
+                scene_tag.append(tag)
+                scene_tag.append(sub_tag)
 
-            track_id += 1
+                track_id += 1
 
     # Number of collisions found
     print("Col Count: ", col_count)
