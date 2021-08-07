@@ -45,7 +45,7 @@ class DataLoader():
     # ------                      of person j in frame i)
     #
 
-    def __init__(self, dataset='eth', flag=0, target_fps=15):
+    def __init__(self,  path=None, dataset='eth', flag=0, target_fps=15):
         # Initialize data processor
         # Inputs:
         # dataset: can only be 'eth' or 'ucy'
@@ -87,13 +87,14 @@ class DataLoader():
         self.vx_list = []
         self.vy_list = []
         self.H = []
+        self.path = '' if path is None else path + '/'
 
         if dataset == 'eth':
             in_fps = 15
-            read_success = self._read_eth_data(flag)
+            read_success = self._read_eth_data(flag, self.path)
         elif dataset == 'ucy':
             in_fps = 25
-            read_success = self._read_ucy_data(flag)
+            read_success = self._read_ucy_data(flag, self.path)
         else:
             print('dataset argument must be \'eth\' or \'ucy\'')
             read_success = False
@@ -108,7 +109,7 @@ class DataLoader():
 
         return
 
-    def _read_eth_data(self, flag):
+    def _read_eth_data(self, flag, path):
         # Read data from the ETH dataset
         # Data is stored into x_list, y_list, vx_list, vy_list
         # Associated person_id and frames are stored into person_id_list, frame_id_list
@@ -126,7 +127,7 @@ class DataLoader():
             return False
 
         # Create a VideoCapture object and get basic video information
-        self.fname = 'ewap_dataset/' + folder + '/' + folder + '.avi'
+        self.fname = path + 'ewap_dataset/' + folder + '/' + folder + '.avi'
         cap = cv2.VideoCapture(self.fname)
         if (cap.isOpened() == False):
             print("Error opening video stream or file")
@@ -138,7 +139,7 @@ class DataLoader():
         self.has_video = True
 
         # Read Homography matrix
-        fname = 'ewap_dataset/' + folder + '/H.txt'
+        fname = path + 'ewap_dataset/' + folder + '/H.txt'
         with open(fname) as f:
             for line in f:
                 line = line.split(' ')
@@ -153,7 +154,7 @@ class DataLoader():
         f.close()
 
         # Read the data from text file
-        fname = 'ewap_dataset/' + folder + '/obsmat.txt'
+        fname = path + 'ewap_dataset/' + folder + '/obsmat.txt'
 
         with open(fname) as f:
             for line in f:
@@ -186,7 +187,7 @@ class DataLoader():
         # print('File reading done!')
         return True
 
-    def _read_ucy_data(self, flag):
+    def _read_ucy_data(self, flag, path):
         # Read data from the UCY dataset
         # Data is stored into x_list, y_list
         # Associated person_id and frames are stored into person_id_list, frame_id_list
@@ -227,7 +228,7 @@ class DataLoader():
                 alt_source = 'crowds_zara01'
             else:
                 alt_source = 'students003'
-            self.fname = 'ucy_dataset/' + folder + '/' + alt_source + '.avi'
+            self.fname = path + 'ucy_dataset/' + folder + '/' + alt_source + '.avi'
             # Dummy video to capture frame information
             # ZARA1 ZARA2 ZARA3 have the same frame width and height
             # UNIV1 and UNIV2 also have the same frame width and height
@@ -239,7 +240,7 @@ class DataLoader():
             self.total_num_frames = -1
             self.has_video = False
         else:
-            self.fname = 'ucy_dataset/' + folder + '/' + source + '.avi'
+            self.fname = path + 'ucy_dataset/' + folder + '/' + source + '.avi'
             cap = cv2.VideoCapture(self.fname)
             if (cap.isOpened() == False):
                 print("Error opening video stream or file")
@@ -260,7 +261,8 @@ class DataLoader():
         self.H, status = cv2.findHomography(pts_img, pts_wrd)
 
         # Read the data from text file
-        fname = 'ucy_dataset/' + folder + '/data_' + folder + '/' + source + '.vsp'
+        fname = path + 'ucy_dataset/' + folder + \
+            '/data_' + folder + '/' + source + '.vsp'
         with open(fname) as f:
             person_id = 0
             mem_x = 0

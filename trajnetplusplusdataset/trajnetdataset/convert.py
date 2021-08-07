@@ -39,6 +39,10 @@ def main():
                         help='Pkl file for goals (required for ORCA sensitive scene filtering)')
     parser.add_argument('--mode', default='default', choices=('default', 'trajnet'),
                         help='mode of ORCA scene generation (required for ORCA sensitive scene filtering)')
+    parser.add_argument('--read_path', default=None,
+                        help='path for reading raw data')
+    parser.add_argument('--save_path', default=None,
+                        help='save output files for machine learn use')
 
     # For Trajectory categorizing and filtering
     categorizers = parser.add_argument_group('categorizers')
