@@ -5,8 +5,6 @@ import shutil
 import pysparkling
 import scipy.io
 
-import readers
-from scene import Scenes
 from get_type import trajectory_type
 
 import warnings
